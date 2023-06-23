@@ -12,37 +12,38 @@
 #include <windows.h>
 #include <tlhelp32.h>
 
-typedef void* (WINAPI * GetProcAddress_t)(HANDLE, char *);
-typedef void* (WINAPI * LoadLibraryA_t)(char *);
+static LPCSTR const target = "dummy.exe";
+
+typedef LPVOID (WINAPI * GetProcAddress_t)(HANDLE, LPCSTR);
+typedef LPVOID (WINAPI * LoadLibraryA_t)(LPCSTR);
+typedef VOID (WINAPI * puts_t)(LPCSTR);
 
 typedef struct _Params {
     LoadLibraryA_t fLoadLibraryA;
     GetProcAddress_t fGetProcAddress;
-} Params; 
+} Params, *LPParams; 
 
-static char* const target = "dummy.exe";
-
-void payload(Params* params)
+void payload(LPParams params)
 {
-    char szMsvcrt[] = "msvcrt.dll";
+    CHAR szMsvcrt[] = "msvcrt.dll";
     HANDLE hMsvcrtDll = params->fLoadLibraryA(szMsvcrt);
     if (!hMsvcrtDll)
     {
         return;
     }
 
-    char szPuts[] = "puts";
-    void (* puts_ptr)(char *) = (void (*)(char *))params->fGetProcAddress(hMsvcrtDll, szPuts);
-    if (!puts_ptr)
+    CHAR szPuts[] = "puts";
+    puts_t fPuts = (puts_t)params->fGetProcAddress(hMsvcrtDll, szPuts);
+    if (!fPuts)
     {
         return;
     }
 
-    char szMessage[] = "Payload Injected.";
-    puts_ptr(szMessage);
+    CHAR szMessage[] = "Payload Injected.";
+    fPuts(szMessage);
 }
 
-DWORD GetProcessIdByProcessName(char* restrict process_name)
+DWORD GetProcessIdByProcessName(LPCSTR const process_name)
 {
     PROCESSENTRY32 process_entry = { 0 };
     process_entry.dwSize = sizeof(PROCESSENTRY32);
@@ -52,7 +53,7 @@ DWORD GetProcessIdByProcessName(char* restrict process_name)
     {
         do
         {
-            if (strcmp(process_entry.szExeFile, process_name) == 0)
+            if (!strcmp(process_entry.szExeFile, process_name))
             {
                 CloseHandle(processes_snapshot);
                 return process_entry.th32ProcessID;
@@ -66,14 +67,14 @@ DWORD GetProcessIdByProcessName(char* restrict process_name)
 
 int main(void)
 {
-    DWORD process_id = 0;
-    if (!(process_id = GetProcessIdByProcessName(target)))
+    DWORD dwProcessId = 0;
+    if (!(dwProcessId = GetProcessIdByProcessName(target)))
     {
         return 1;
     }
 
     HANDLE hProcess = NULL;
-    hProcess = OpenProcess(PROCESS_ALL_ACCESS, 0, process_id);
+    hProcess = OpenProcess(PROCESS_ALL_ACCESS, 0, dwProcessId);
     if (!hProcess)
     {
         return 2;
@@ -84,54 +85,54 @@ int main(void)
         .fGetProcAddress = (GetProcAddress_t)(GetProcAddress(GetModuleHandleA("kernel32.dll"), "GetProcAddress"))
     };
 
-    void* params_ptr = VirtualAllocEx(hProcess, NULL, sizeof(p), MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
-    if (!params_ptr)
+    const LPVOID lpParams = VirtualAllocEx(hProcess, NULL, sizeof(p), MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
+    if (!lpParams)
     {
         CloseHandle(hProcess);
         return 3;
     }
 
-    SIZE_T bytes = 0;
-    if (!WriteProcessMemory(hProcess, params_ptr, (LPCVOID)&p, sizeof(p), &bytes) || bytes != sizeof(p))
+    SIZE_T sztBytes = 0;
+    if (!WriteProcessMemory(hProcess, lpParams, (LPCVOID)&p, sizeof(p), &sztBytes) || sztBytes != sizeof(p))
     {
-        VirtualFreeEx(hProcess, params_ptr, sizeof(p), MEM_RELEASE);
+        VirtualFreeEx(hProcess, lpParams, sizeof(p), MEM_RELEASE);
         CloseHandle(hProcess);
         return 4;
     }
 
-    uintptr_t payload_size = (uintptr_t)GetProcessIdByProcessName - (uintptr_t)payload;
-    void* exec_mem = VirtualAllocEx(hProcess, NULL, payload_size, MEM_COMMIT | MEM_RESERVE, PAGE_EXECUTE_READWRITE);
-    if (!exec_mem)
+    const UINT_PTR payload_size = (UINT_PTR)GetProcessIdByProcessName - (UINT_PTR)payload;
+    LPVOID lpPayload = VirtualAllocEx(hProcess, NULL, payload_size, MEM_COMMIT | MEM_RESERVE, PAGE_EXECUTE_READWRITE);
+    if (!lpPayload)
     {
-        VirtualFreeEx(hProcess, params_ptr, sizeof(p), MEM_RELEASE);
+        VirtualFreeEx(hProcess, lpParams, sizeof(p), MEM_RELEASE);
         CloseHandle(hProcess);
         return 6;
     }
 
-    bytes = 0;
-    if (!WriteProcessMemory(hProcess, exec_mem, (LPCVOID)payload, payload_size, &bytes) || bytes != payload_size)
+    sztBytes = 0;
+    if (!WriteProcessMemory(hProcess, lpPayload, (LPCVOID)payload, payload_size, &sztBytes) || sztBytes != payload_size)
     {
-        VirtualFreeEx(hProcess, params_ptr, sizeof(p), MEM_RELEASE);
-        VirtualFreeEx(hProcess, exec_mem, payload_size, MEM_RELEASE);
+        VirtualFreeEx(hProcess, lpParams, sizeof(p), MEM_RELEASE);
+        VirtualFreeEx(hProcess, lpPayload, payload_size, MEM_RELEASE);
         CloseHandle(hProcess);
         return 7;
     }
 
-    HANDLE puts_handle = CreateRemoteThread(hProcess, NULL, 0, (LPTHREAD_START_ROUTINE)exec_mem, params_ptr, 0, 0);
-    if (!puts_handle)
+    HANDLE hPayload = CreateRemoteThread(hProcess, NULL, 0, (LPTHREAD_START_ROUTINE)lpPayload, lpParams, 0, NULL);
+    if (!hPayload)
     {
-        VirtualFreeEx(hProcess, params_ptr, sizeof(p), MEM_RELEASE);
-        VirtualFreeEx(hProcess, exec_mem, payload_size, MEM_RELEASE);
+        VirtualFreeEx(hProcess, lpParams, sizeof(p), MEM_RELEASE);
+        VirtualFreeEx(hProcess, lpPayload, payload_size, MEM_RELEASE);
         CloseHandle(hProcess);
         return 8;
     }
 
-    WaitForSingleObjectEx(puts_handle, INFINITE, TRUE);
-    VirtualFreeEx(hProcess, params_ptr, sizeof(p), MEM_RELEASE);
-    VirtualFreeEx(hProcess, exec_mem, payload_size, MEM_RELEASE);
+    WaitForSingleObjectEx(hPayload, INFINITE, TRUE);
+    VirtualFreeEx(hProcess, lpParams, sizeof(p), MEM_RELEASE);
+    VirtualFreeEx(hProcess, lpPayload, payload_size, MEM_RELEASE);
 
     CloseHandle(hProcess);
-    CloseHandle(puts_handle);
+    CloseHandle(hPayload);
 
     return 0;
 }

@@ -1,7 +1,7 @@
 PROJECT = lazy-payload
 
 CC = x86_64-w64-mingw32-gcc
-CFLAGS = -O3 -fno-function-sections -fPIC
+CFLAGS = -std=c99 -O3 -fPIC -fno-function-sections
 
 all: target dummy
 
