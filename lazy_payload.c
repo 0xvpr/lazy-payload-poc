@@ -43,7 +43,7 @@ void payload(LPParams params)
     fPuts(szMessage);
 }
 
-DWORD GetProcessIdByProcessName(LPCSTR const process_name)
+DWORD GetProcessIdByProcessName(LPCSTR const restrict process_name)
 {
     PROCESSENTRY32 process_entry = { 0 };
     process_entry.dwSize = sizeof(PROCESSENTRY32);
