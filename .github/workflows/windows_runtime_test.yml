@@ -22,7 +22,7 @@ jobs:
         uses: actions/upload-artifact@v3
         with:
           name: binaries
-          path: *.exe
+          path: bin
 
   windows_runtime_tests:
     needs: docker_build
