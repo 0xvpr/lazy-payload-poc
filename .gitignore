@@ -1,0 +1,8 @@
+# Compiled files
+*.a
+*.exe
+*.dll
+*.lib
+*.so
+*.o
+*.obj
