@@ -11,5 +11,15 @@
 <br>
 
 # Overview
+This is a proof of concept for leveraging the behavior of kernel32 and ntdll kernel loading  
+in order to write small, executable, shellcode that will run in an arbitrary process.
 
-# Building
+# Demo
+[ TODO ]
+
+# Building Using Docker (Recommended)
+```bash
+git clone https://github.com/0xvpr/lazy-payload-poc.git lazy-payload-poc && cd lazy-payload-poc
+make docker-container
+make docker-build
+```

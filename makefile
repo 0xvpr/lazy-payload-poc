@@ -5,11 +5,11 @@ CFLAGS = -O3 -fno-function-sections -fPIC
 
 all: target dummy
 
-target:
-	$(CC) $(CFLAGS) lazy_payload.c -o $(PROJECT).exe
+target: bin
+	$(CC) $(CFLAGS) lazy_payload.c -o ./bin/$(PROJECT).exe
 
-dummy:
-	$(CC) dummy.c -o dummy.exe
+dummy: bin
+	$(CC) dummy.c -o ./bin/dummy.exe
 
 .PHONY: docker-container
 docker-container:
@@ -21,5 +21,8 @@ docker-instance:
 docker-build:
 	docker run -v "$(shell pwd):/var/$(PROJECT)-dev/$(PROJECT)" -u "$(shell id -u):$(shell id -g)" "$(PROJECT)-dev" make
 
+bin:
+	mkdir -p $@
+
 clean:
-	rm -f *.exe
+	rm -fr ./bin
