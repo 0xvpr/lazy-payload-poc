@@ -22,7 +22,7 @@ typedef struct _Params {
 
 static char* const target = "dummy.exe";
 
-void payload(struct _Params* params)
+void payload(Params* params)
 {
     char szMsvcrt[] = "msvcrt.dll";
     HANDLE hMsvcrtDll = params->fLoadLibraryA(szMsvcrt);
