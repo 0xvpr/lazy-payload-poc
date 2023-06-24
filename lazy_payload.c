@@ -85,50 +85,38 @@ int main(void)
         .fGetProcAddress = (GetProcAddress_t)(GetProcAddress(GetModuleHandleA("kernel32.dll"), "GetProcAddress"))
     };
 
-    const LPVOID lpParams = VirtualAllocEx(hProcess, NULL, sizeof(p), MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
-    if (!lpParams)
+    const UINT_PTR payload_size = (UINT_PTR)GetProcessIdByProcessName - (UINT_PTR)payload;
+    LPVOID lpPayload = VirtualAllocEx(hProcess, NULL, payload_size+sizeof(p), MEM_COMMIT | MEM_RESERVE, PAGE_EXECUTE_READWRITE);
+    if (!lpPayload)
     {
         CloseHandle(hProcess);
         return 3;
     }
 
     SIZE_T sztBytes = 0;
-    if (!WriteProcessMemory(hProcess, lpParams, (LPCVOID)&p, sizeof(p), &sztBytes) || sztBytes != sizeof(p))
+    if (!WriteProcessMemory(hProcess, lpPayload, (LPCVOID)payload, payload_size, &sztBytes) || sztBytes != payload_size)
     {
-        VirtualFreeEx(hProcess, lpParams, sizeof(p), MEM_RELEASE);
+        VirtualFreeEx(hProcess, lpPayload, payload_size, MEM_RELEASE);
         CloseHandle(hProcess);
         return 4;
     }
 
-    const UINT_PTR payload_size = (UINT_PTR)GetProcessIdByProcessName - (UINT_PTR)payload;
-    LPVOID lpPayload = VirtualAllocEx(hProcess, NULL, payload_size, MEM_COMMIT | MEM_RESERVE, PAGE_EXECUTE_READWRITE);
-    if (!lpPayload)
+    sztBytes = 0;
+    if (!WriteProcessMemory(hProcess, (LPVOID)((UINT_PTR)lpPayload+payload_size), (LPCVOID)&p, sizeof(p), &sztBytes) || sztBytes != sizeof(p))
     {
-        VirtualFreeEx(hProcess, lpParams, sizeof(p), MEM_RELEASE);
         CloseHandle(hProcess);
         return 6;
     }
 
-    sztBytes = 0;
-    if (!WriteProcessMemory(hProcess, lpPayload, (LPCVOID)payload, payload_size, &sztBytes) || sztBytes != payload_size)
+    HANDLE hPayload = CreateRemoteThread(hProcess, NULL, 0, (LPTHREAD_START_ROUTINE)lpPayload, (LPVOID)((UINT_PTR)lpPayload+payload_size), 0, NULL);
+    if (!hPayload)
     {
-        VirtualFreeEx(hProcess, lpParams, sizeof(p), MEM_RELEASE);
         VirtualFreeEx(hProcess, lpPayload, payload_size, MEM_RELEASE);
         CloseHandle(hProcess);
         return 7;
     }
 
-    HANDLE hPayload = CreateRemoteThread(hProcess, NULL, 0, (LPTHREAD_START_ROUTINE)lpPayload, lpParams, 0, NULL);
-    if (!hPayload)
-    {
-        VirtualFreeEx(hProcess, lpParams, sizeof(p), MEM_RELEASE);
-        VirtualFreeEx(hProcess, lpPayload, payload_size, MEM_RELEASE);
-        CloseHandle(hProcess);
-        return 8;
-    }
-
     WaitForSingleObjectEx(hPayload, INFINITE, TRUE);
-    VirtualFreeEx(hProcess, lpParams, sizeof(p), MEM_RELEASE);
     VirtualFreeEx(hProcess, lpPayload, payload_size, MEM_RELEASE);
 
     CloseHandle(hProcess);
